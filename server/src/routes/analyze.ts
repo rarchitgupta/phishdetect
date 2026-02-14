@@ -1,56 +1,68 @@
-import { Hono } from 'hono'
+import { Hono } from "hono";
+import { PuppeteerController, PageState } from "../services/puppeteer";
 
-const analyzeRouter = new Hono()
+const analyzeRouter = new Hono();
 
 interface AnalyzeRequest {
-  url: string
+  url: string;
 }
 
 interface AnalyzeResponse {
-  threat_level: 'safe' | 'suspicious' | 'critical'
-  findings: string[]
-  screenshots: string[]
-  gemini_reasoning: string
-  status: string
+  threat_level: "safe" | "suspicious" | "critical";
+  findings: string[];
+  pageState: PageState;
+  gemini_reasoning: string;
+  status: string;
 }
 
-analyzeRouter.post('/', async (c) => {
+analyzeRouter.post("/", async (c) => {
+  const controller = new PuppeteerController();
+
   try {
-    const body = await c.req.json() as AnalyzeRequest
+    const body = (await c.req.json()) as AnalyzeRequest;
 
     if (!body.url) {
-      return c.json({ error: 'URL is required' }, 400)
+      return c.json({ error: "URL is required" }, 400);
     }
 
     // Validate URL format
     try {
-      new URL(body.url)
+      new URL(body.url);
     } catch {
-      return c.json({ error: 'Invalid URL format' }, 400)
+      return c.json({ error: "Invalid URL format" }, 400);
     }
 
-    // TODO: Implement core logic
-    // 1. Launch Puppeteer
-    // 2. Navigate to URL
-    // 3. Extract page state
-    // 4. Monitor network requests
-    // 5. Classify forms
-    // 6. Call Gemini agent loop
-    // 7. Generate report
+    console.log(`Analyzing URL: ${body.url}`);
 
+    // Initialize Puppeteer
+    await controller.initialize();
+
+    // Navigate and extract page state
+    const pageState = await controller.analyzePage(body.url);
+
+    console.log(`Analysis complete. Forms found: ${pageState.forms.length}`);
+
+    // Pass cleaned data to Gemini for analysis (no pre-classification)
     const response: AnalyzeResponse = {
-      threat_level: 'safe',
-      findings: ['Placeholder finding'],
-      screenshots: [],
-      gemini_reasoning: 'Not yet implemented',
-      status: 'pending',
-    }
+      threat_level: "safe", // placeholder, Gemini will determine actual threat
+      findings: [],
+      pageState,
+      gemini_reasoning: "Awaiting Gemini analysis...",
+      status: "pending",
+    };
 
-    return c.json(response)
+    return c.json(response);
   } catch (error) {
-    console.error('Error analyzing link:', error)
-    return c.json({ error: 'Internal server error' }, 500)
+    console.error("Error analyzing link:", error);
+    return c.json(
+      {
+        error: `Analysis failed: ${error instanceof Error ? error.message : "Unknown error"}`,
+      },
+      500,
+    );
+  } finally {
+    await controller.close();
   }
-})
+});
 
-export default analyzeRouter
+export default analyzeRouter;
