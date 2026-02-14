@@ -1,159 +1,145 @@
 # AI-Powered Phishing Detection System
 
-## Implementation Roadmap & Architecture Guide
+## 🚀 24-Hour Hackathon Edition
+
+**Goal:** Single-URL phishing detector using Gemini AI agent to autonomously browse and identify credential harvesting.
 
 ---
 
-## 🎯 Project Overview
+## ✅ Completed (Hours 0-4)
 
-**Goal:** Build a web application that analyzes suspicious emails/messages and tests links by autonomously navigating through websites using AI to detect phishing attempts, payment scams, and credential harvesting.
+### Backend Setup
 
-**Core Innovation:** Instead of just checking URLs, the system uses an AI agent to interact with websites like a real user would—filling forms, clicking buttons, and following multi-step flows to uncover hidden malicious behavior.
+- [x] Hono server on port 8000 (Bun-native)
+- [x] CORS middleware for frontend communication
+- [x] `/api/analyze` POST endpoint (accepts URL)
 
----
+### Puppeteer Browser Automation
 
-## 🏗️ System Architecture
+- [x] Browser launching with security hardening
+- [x] Full page state extraction (forms, links, text, cookies)
+- [x] Network request monitoring (all HTTP/HTTPS calls)
+- [x] Sensitive field classification (SSN, CC, password detection)
+- [x] Screenshot capture (base64 encoded)
+- [x] Form interaction methods (fill, submit)
 
-### High-Level Flow
+### Data Cleaning
 
-```
-User Input (Email/Message with Links)
-    ↓
-Link Extraction & Validation
-    ↓
-Job Queue (Async Processing)
-    ↓
-Isolated Sandbox Environment
-    ↓
-AI Agent Loop:
-    - Observe current page state
-    - AI decides next action
-    - Execute action (fill form, click, navigate)
-    - Monitor for red flags
-    - Repeat until terminal condition
-    ↓
-Generate Threat Report
-    ↓
-Store Results & Notify User
-```
+- [x] Filtered clickable elements (removed CSS garbage)
+- [x] Trimmed network requests (url, domain, isSuspicious only)
+- [x] Clean JSON response structure
 
-### Component Breakdown
+### Testing
 
-```
-┌──────────────────────────────────────────────────────┐
-│                  Frontend (React)                     │
-│  - Email/message input                               │
-│  - Link submission interface                         │
-│  - Real-time scan progress                           │
-│  - Interactive threat reports                        │
-└────────────────┬─────────────────────────────────────┘
-                 │
-                 ▼
-┌──────────────────────────────────────────────────────┐
-│              Backend API (Node.js/Express)            │
-│  - Link extraction & validation                      │
-│  - Job queue management                              │
-│  - Result aggregation                                │
-│  - User authentication                               │
-└────────────────┬─────────────────────────────────────┘
-                 │
-                 ▼
-┌──────────────────────────────────────────────────────┐
-│           Job Queue (Bull/BullMQ + Redis)            │
-│  - Async link scanning                               │
-│  - Priority handling                                 │
-│  - Retry logic                                       │
-└────────────────┬─────────────────────────────────────┘
-                 │
-                 ▼
-┌──────────────────────────────────────────────────────┐
-│        Sandbox Worker (Docker Container)             │
-│                                                      │
-│  ┌────────────────────────────────────────────┐    │
-│  │      Puppeteer Browser Instance            │    │
-│  │                                            │    │
-│  │  • AI Agent Controller                     │    │
-│  │  • Network Monitor                         │    │
-│  │  • Screenshot Capture                      │    │
-│  │  • Red Flag Detection                      │    │
-│  └────────────────────────────────────────────┘    │
-└────────────────┬─────────────────────────────────────┘
-                 │
-                 ▼
-┌──────────────────────────────────────────────────────┐
-│          Claude API (Anthropic)                      │
-│  - Analyzes page content                             │
-│  - Decides next actions                              │
-│  - Generates threat assessments                      │
-└──────────────────────────────────────────────────────┘
-                 │
-                 ▼
-┌──────────────────────────────────────────────────────┐
-│         Database (PostgreSQL)                        │
-│  - Scan results                                      │
-│  - User accounts                                     │
-│  - Known malicious patterns                          │
-│  - Historical data for ML                            │
-└──────────────────────────────────────────────────────┘
-```
+- [x] Tested with google.com (works end-to-end)
+- [x] Verified data extraction accuracy
+- [x] Confirmed Puppeteer integration
 
 ---
 
-## 📋 Implementation Plan
+## 🔄 In Progress / Next (Estimated Hours 4-8)
 
-### Phase 1: Foundation (Week 1)
+### **Phase 1: Gemini Analysis** (2-3 hours)
 
-#### 1.1 Project Setup
+- [ ] Create `gemini.ts` service
+- [ ] Implement AI analysis loop:
+  - Send page state + screenshot to Gemini
+  - Gemini decides: Is this phishing? What's suspicious?
+  - Get threat classification + findings
+- [ ] Add Gemini tool calls:
+  - `should_fill_form()` - AI decides if form looks safe to fill
+  - `submit_form()` - Trigger form submission
+  - `get_page_state()` - Re-capture page state
+  - `stop_analysis()` - Terminate when danger detected
+- [ ] Implement loop until terminal condition
 
-- Initialize Node.js project with TypeScript (optional but recommended)
-- Set up project structure:
-  ```
-  /src
-    /api          # Express routes
-    /services     # Business logic
-    /workers      # Sandbox workers
-    /utils        # Helpers
-    /models       # Database models
-  /docker         # Docker configs
-  /frontend       # React app
-  ```
-- Configure environment variables (`.env` file)
-- Set up Git repository with proper `.gitignore`
+### **Phase 2: Frontend Integration** (1-2 hours)
 
-#### 1.2 Database Schema Design
+- [ ] Input form for URL submission
+- [ ] Real-time analysis status
+- [ ] Display threat report with findings
+- [ ] Show screenshot preview
+- [ ] Network requests visualization (optional)
 
-**Tables to create:**
+### **Phase 3: Polish & Testing** (1-2 hours)
 
-- `users` - User accounts and authentication
-- `scans` - Scan requests and metadata
-- `scan_results` - Detailed findings from each scan
-- `interactions` - Log of AI agent actions
-- `red_flags` - Detected threats and patterns
-- `known_threats` - Database of known malicious domains/patterns
+- [ ] Test with real phishing simulator
+- [ ] Edge case handling
+- [ ] Error messages & user feedback
+- [ ] Performance optimization
 
-**Key relationships:**
+---
 
-- One scan → many interactions
-- One scan → many red_flags
-- Scans belong to users
+## 📊 Simplified Architecture (Hackathon)
 
-#### 1.3 Core Dependencies
+```
+User Input (Single URL)
+    ↓
+POST /api/analyze
+    ↓
+Puppeteer: Navigate & Capture
+    ↓
+Extract Page State (forms, text, network, screenshot)
+    ↓
+Gemini AI Loop:
+    • Analyze current state
+    • Decide: Fill form? Click link? Stop?
+    • Execute & loop until terminal
+    ↓
+Threat Report
+    ├─ Threat Level (safe/suspicious/critical)
+    ├─ Findings (why it's phishing)
+    ├─ Screenshot (visual evidence)
+    └─ Network requests (exfiltration attempts)
+    ↓
+Return to Frontend
+```
 
-```json
-{
-  "dependencies": {
-    "express": "^4.18.0",
-    "puppeteer": "^21.0.0",
-    "@anthropic-ai/sdk": "^0.30.0",
-    "bull": "^4.12.0",
-    "pg": "^8.11.0",
-    "cheerio": "^1.0.0",
+**No database, no queue, no Docker.** Just: URL → Browser → AI → Report
+
+---
+
+## 🛠️ Tech Stack
+
+- **Frontend:** Next.js 16 + React 19 (existing)
+- **Backend:** Hono + Bun (lightweight, fast)
+- **Browser:** Puppeteer (headless Chrome)
+- **AI:** Google Gemini 2.0 (vision + text)
+- **Language:** TypeScript
+
+---
+
+## 🎯 Success Criteria
+
+✅ **Must Have:**
+
+- Analyze single URL
+- Detect sensitive form fields
+- Classify threat level
+- Generate findings
+- Work end-to-end in 24 hours
+
+⚠️ **Good to Have:**
+
+- Screenshot + visual analysis
+- Network request tracking
+- Clean UI
+- Multiple test cases
+
+---
+
+## 📝 Original Detailed Roadmap
+
+_For reference, the full implementation roadmap from the initial design is preserved below. Use for long-term planning after hackathon._
+
     "validator": "^13.11.0",
     "dotenv": "^16.0.0",
     "winston": "^3.11.0"
-  }
+
 }
-```
+}
+
+````
 
 ---
 
@@ -197,7 +183,7 @@ function analyzeURLStructure(url) {
     usesHTTPS: url.startsWith("https"),
   };
 }
-```
+````
 
 #### 2.2 Basic API Endpoints
 
