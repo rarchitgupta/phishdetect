@@ -92,6 +92,9 @@ async function runAnalysisLoop(
 
     await page.setViewport({ width: 1920, height: 1080 });
     await page.goto(url, { waitUntil: "networkidle2", timeout: 30000 });
+    
+    // Wait for page to fully render
+    await new Promise((resolve) => setTimeout(resolve, 2000));
 
     while (iterationCount < 11) {
       // Max 10 fills + 1 stop
@@ -147,6 +150,9 @@ async function runAnalysisLoop(
 
         // Submit the form
         await puppeteer.submitForm(page, action.formIndex || 0);
+
+        // Wait for page response to render before next analysis
+        await new Promise((resolve) => setTimeout(resolve, 2000));
 
         // Mark if we just submitted sensitive data
         if (isSensitive) {
