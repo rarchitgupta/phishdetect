@@ -1,5 +1,5 @@
-import whois from "whois-json";
-import dns from "dns/promises";
+import { lookup as whoisLookup } from "whois";
+import * as dns from "dns/promises";
 
 export interface DomainRegistrationInfo {
   domain: string;
@@ -12,7 +12,14 @@ export interface DomainRegistrationInfo {
 }
 
 export class LookupService {
-
+  private promisifyWhois(domain: string): Promise<string> {
+    return new Promise((resolve, reject) => {
+      whoisLookup(domain, (err: Error | null, data: string | any) => {
+        if (err) reject(err);
+        else resolve(typeof data === "string" ? data : JSON.stringify(data));
+      });
+    });
+  }
   async getIP(domain: string): Promise<string | null> {
     try {
       const result = await dns.lookup(domain);
@@ -22,30 +29,75 @@ export class LookupService {
     }
   }
 
-  async getDomainRegistrationInfo(domain: string): Promise<DomainRegistrationInfo> {
+  private parseWhoisDate(dateStr: string | null | undefined): Date | undefined {
+    if (!dateStr) return undefined;
     try {
-      const whoisResult = await whois(domain);
+      const date = new Date(dateStr);
+      if (!isNaN(date.getTime())) {
+        return date;
+      }
+    } catch {
+      return undefined;
+    }
+    return undefined;
+  }
 
-      const createdRaw =
-        whoisResult.creationDate ||
-        whoisResult.createdDate ||
-        whoisResult.created ||
-        whoisResult.registered;
+  private extractWhoisField(
+    whoisResponse: string,
+    fieldNames: string[],
+  ): string | null {
+    const lines = whoisResponse.split("\n");
+    for (const line of lines) {
+      for (const fieldName of fieldNames) {
+        const regex = new RegExp(`^${fieldName}\\s*:?\\s*(.+)$`, "im");
+        const match = line.match(regex);
+        if (match) {
+          return match[1].trim();
+        }
+      }
+    }
+    return null;
+  }
 
-      const expiresRaw =
-        whoisResult.registryExpiryDate ||
-        whoisResult.expiryDate ||
-        whoisResult.expires;
+  async getDomainRegistrationInfo(
+    domain: string,
+  ): Promise<DomainRegistrationInfo> {
+    try {
+      const whoisResponse = await this.promisifyWhois(domain);
 
-      const created = createdRaw ? new Date(createdRaw) : undefined;
-      const expires = expiresRaw ? new Date(expiresRaw) : undefined;
+      // Extract creation date from various field names
+      const createdRaw = this.extractWhoisField(whoisResponse, [
+        "Creation Date",
+        "Created Date",
+        "created",
+        "registered",
+        "Registration Time",
+      ]);
+
+      // Extract expiry date from various field names
+      const expiresRaw = this.extractWhoisField(whoisResponse, [
+        "Registry Expiry Date",
+        "Expiry Date",
+        "Expiration Date",
+        "expires",
+        "Expire Date",
+      ]);
+
+      // Extract registrar
+      const registrar = this.extractWhoisField(whoisResponse, [
+        "Registrar",
+        "Sponsoring Registrar",
+      ]);
+
+      const created = this.parseWhoisDate(createdRaw);
+      const expires = this.parseWhoisDate(expiresRaw);
 
       let ageDays: number | undefined = undefined;
       let isNewDomain = true;
 
       if (created && !isNaN(created.getTime())) {
         ageDays = Math.floor(
-          (Date.now() - created.getTime()) / (1000 * 60 * 60 * 24)
+          (Date.now() - created.getTime()) / (1000 * 60 * 60 * 24),
         );
         isNewDomain = ageDays < 30;
       }
@@ -57,11 +109,10 @@ export class LookupService {
         ip: ip || undefined,
         createdDate: created,
         expiresDate: expires,
-        registrar: whoisResult.registrar,
+        registrar: registrar || undefined,
         ageDays,
         isNewDomain,
       };
-
     } catch (err) {
       return {
         domain,
@@ -69,5 +120,4 @@ export class LookupService {
       };
     }
   }
-
 }
