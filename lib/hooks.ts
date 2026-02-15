@@ -34,6 +34,7 @@ const transformResponse = (
     findings: response.findings.map(transformFinding),
     pageState: response.pageState,
     screenshot: response.screenshot || response.pageState.screenshot,
+    domain_info: response.domain_info,
   };
 };
 

@@ -44,6 +44,15 @@ export interface PageState {
   screenshot?: string;
 }
 
+export interface DomainInfo {
+  domain: string;
+  ip: string;
+  createdDate: string;
+  registrar: string;
+  ageDays: number;
+  isNewDomain: boolean;
+}
+
 export interface AnalyzeResponse {
   threat_level: "safe" | "suspicious";
   findings: Finding[];
@@ -51,6 +60,7 @@ export interface AnalyzeResponse {
   screenshot?: string;
   gemini_reasoning?: string;
   status?: string;
+  domain_info?: DomainInfo;
 }
 
 // Transformed type for UI components
@@ -65,4 +75,5 @@ export interface TransformedAnalysisResult {
   findings: TransformedFinding[];
   pageState: PageState;
   screenshot?: string;
+  domain_info?: DomainInfo;
 }

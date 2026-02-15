@@ -8,7 +8,7 @@ import { useAnalyzeUrl } from "@/lib/hooks";
 export default function AnalysisPage() {
   const searchParams = useSearchParams();
   const { data, loading, error, analyze } = useAnalyzeUrl();
-  console.log("screenshot", data?.screenshot);
+  console.log("screenshot", data?.domain_info);
 
   const url = searchParams.get("url");
 
@@ -110,58 +110,61 @@ export default function AnalysisPage() {
               )}
 
               {/* Score and Findings Layout */}
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                {/* Phishing Score */}
-                <div className="flex flex-col items-center justify-center p-8 bg-linear-to-br from-yellow-50 to-orange-50 rounded-lg border border-orange-200">
-                  <div className="text-center">
-                    <p className="text-gray-600 text-sm font-medium mb-2">
-                      PHISHING LIKELINESS SCORE
-                    </p>
-                    <div className="relative w-40 h-40 mx-auto mb-4">
-                      <svg
-                        className="w-full h-full transform -rotate-90"
-                        viewBox="0 0 100 100"
-                      >
-                        {/* Background circle */}
-                        <circle
-                          cx="50"
-                          cy="50"
-                          r="45"
-                          fill="none"
-                          stroke="#e5e7eb"
-                          strokeWidth="8"
-                        />
-                        {/* Progress circle */}
-                        <circle
-                          cx="50"
-                          cy="50"
-                          r="45"
-                          fill="none"
-                          stroke="#f59e0b"
-                          strokeWidth="8"
-                          strokeDasharray={`${(phishingScore / 100) * (2 * Math.PI * 45)} ${2 * Math.PI * 45}`}
-                          strokeLinecap="round"
-                        />
-                      </svg>
-                      <div className="absolute inset-0 flex flex-col items-center justify-center">
-                        <span className="text-4xl font-bold text-orange-600">
-                          {phishingScore}
-                        </span>
-                        <span className="text-gray-500 text-sm">/ 100</span>
+              <div className="grid grid-cols-1 gap-8">
+                {/* Score */}
+                <div>
+                  {/* Phishing Score */}
+                  <div className="flex flex-col items-center justify-center p-8 bg-linear-to-br from-yellow-50 to-orange-50 rounded-lg border border-orange-200">
+                    <div className="text-center">
+                      <p className="text-gray-600 text-sm font-medium mb-2">
+                        PHISHING LIKELINESS SCORE
+                      </p>
+                      <div className="relative w-40 h-40 mx-auto mb-4">
+                        <svg
+                          className="w-full h-full transform -rotate-90"
+                          viewBox="0 0 100 100"
+                        >
+                          {/* Background circle */}
+                          <circle
+                            cx="50"
+                            cy="50"
+                            r="45"
+                            fill="none"
+                            stroke="#e5e7eb"
+                            strokeWidth="8"
+                          />
+                          {/* Progress circle */}
+                          <circle
+                            cx="50"
+                            cy="50"
+                            r="45"
+                            fill="none"
+                            stroke="#f59e0b"
+                            strokeWidth="8"
+                            strokeDasharray={`${(phishingScore / 100) * (2 * Math.PI * 45)} ${2 * Math.PI * 45}`}
+                            strokeLinecap="round"
+                          />
+                        </svg>
+                        <div className="absolute inset-0 flex flex-col items-center justify-center">
+                          <span className="text-4xl font-bold text-orange-600">
+                            {phishingScore}
+                          </span>
+                          <span className="text-gray-500 text-sm">/ 100</span>
+                        </div>
                       </div>
+                      <p className="text-sm text-gray-600 mt-4">
+                        {phishingScore > 70
+                          ? "High Risk"
+                          : phishingScore > 40
+                            ? "Medium Risk"
+                            : "Low Risk"}
+                      </p>
                     </div>
-                    <p className="text-sm text-gray-600 mt-4">
-                      {phishingScore > 70
-                        ? "High Risk"
-                        : phishingScore > 40
-                          ? "Medium Risk"
-                          : "Low Risk"}
-                    </p>
                   </div>
                 </div>
 
                 {/* Findings Sections */}
-                <div className="space-y-4 overflow-y-auto max-h-96">
+                <div className="space-y-4">
                   {/* Suspicious Findings */}
                   {insecureFindings.length > 0 && (
                     <div className="p-4 bg-red-50 rounded-lg border border-red-200">
@@ -215,6 +218,74 @@ export default function AnalysisPage() {
                   )}
                 </div>
               </div>
+
+              {/* Domain Info Section - Full Width */}
+              {data.domain_info?.ageDays !== undefined && (
+                <div
+                  className={`mt-8 p-6 rounded-lg border ${
+                    data.domain_info.ageDays > 365
+                      ? "bg-green-50 border-green-200"
+                      : "bg-orange-50 border-orange-200"
+                  }`}
+                >
+                  <div className="flex items-center gap-2 mb-4">
+                    <span className="text-lg font-semibold">
+                      {data.domain_info.ageDays > 365 ? "✓" : "⚠"}
+                    </span>
+                    <h3 className="text-lg font-semibold">
+                      Domain Information
+                    </h3>
+                    <span
+                      className={`inline-block px-2 py-1 text-xs font-semibold rounded ${
+                        data.domain_info.ageDays > 365
+                          ? "bg-green-200 text-green-800"
+                          : "bg-orange-200 text-orange-800"
+                      }`}
+                    >
+                      {data.domain_info.ageDays > 365 ? "Safe" : "Suspicious"}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-sm">
+                    <div>
+                      <span className="font-medium text-gray-700">Domain:</span>
+                      <p className="text-gray-600">{data.domain_info.domain}</p>
+                    </div>
+                    <div>
+                      <span className="font-medium text-gray-700">Age:</span>
+                      <p className="text-gray-600">
+                        {data.domain_info.ageDays} days
+                      </p>
+                    </div>
+                    <div>
+                      <span className="font-medium text-gray-700">
+                        Created:
+                      </span>
+                      <p className="text-gray-600">
+                        {new Date(
+                          data.domain_info.createdDate,
+                        ).toLocaleDateString()}
+                      </p>
+                    </div>
+                    <div>
+                      <span className="font-medium text-gray-700">
+                        IP Address:
+                      </span>
+                      <p className="text-gray-600 break-all">
+                        {data.domain_info.ip}
+                      </p>
+                    </div>
+                  </div>
+                  {data.domain_info.ageDays <= 365 && (
+                    <p
+                      className={`text-xs mt-3 ${data.domain_info.ageDays > 365 ? "text-green-700" : "text-orange-700"}`}
+                    >
+                      {data.domain_info.ageDays <= 30
+                        ? "⚠ Very recently registered - high risk indicator for phishing"
+                        : "⚠ Recently registered - potential risk indicator"}
+                    </p>
+                  )}
+                </div>
+              )}
             </>
           )}
         </div>
