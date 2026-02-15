@@ -18,6 +18,11 @@ interface AnalyzeResponse {
   status: string;
 }
 
+interface AnalysisLoopResult {
+  aiResults: AIResults;
+  finalPageState: PageState;
+}
+
 analyzeRouter.post("/", async (c) => {
   const puppeteer = new PuppeteerController();
   const gemini = new GeminiAnalyzer(process.env.GEMINI_API_KEY!);
@@ -51,7 +56,7 @@ analyzeRouter.post("/", async (c) => {
     await puppeteer.initialize();
 
     // Run the analysis loop
-    const aiResults: AIResults = await runAnalysisLoop(
+    const { aiResults, finalPageState } = await runAnalysisLoop(
       body.url,
       puppeteer,
       gemini,
@@ -60,9 +65,6 @@ analyzeRouter.post("/", async (c) => {
     console.log(
       `Analysis complete. Actions taken: ${aiResults.actions.length}`,
     );
-
-    // Get final page state for response
-    const finalPageState = await puppeteer.analyzePage(body.url);
 
     return c.json({
       threat_level: aiResults.finalThreatLevel,
@@ -90,11 +92,12 @@ async function runAnalysisLoop(
   url: string,
   puppeteer: PuppeteerController,
   gemini: GeminiAnalyzer,
-): Promise<AIResults> {
+): Promise<AnalysisLoopResult> {
   const aiResults: any[] = [];
   let iterationCount = 0;
   let page: any = null;
   let submittedSensitiveForm = false;
+  let finalPageState: PageState | null = null;
 
   try {
     // Create page once at the beginning
@@ -103,7 +106,7 @@ async function runAnalysisLoop(
 
     await page.setViewport({ width: 1920, height: 1080 });
     await page.goto(url, { waitUntil: "networkidle2", timeout: 30000 });
-    
+
     // Wait for page to fully render
     await new Promise((resolve) => setTimeout(resolve, 2000));
 
@@ -173,13 +176,26 @@ async function runAnalysisLoop(
 
       iterationCount++;
     }
+
+    // Capture final page state before closing the page
+    if (page) {
+      finalPageState = await puppeteer.analyzePage(url, page);
+    }
   } finally {
     if (page) {
       await page.close();
     }
   }
 
-  return gemini.generateFinalReport(aiResults, url);
+  if (!finalPageState) {
+    throw new Error("Failed to capture final page state");
+  }
+
+  const aiResults_final = await gemini.generateFinalReport(aiResults, url);
+  return {
+    aiResults: aiResults_final,
+    finalPageState: finalPageState,
+  };
 }
 
 export default analyzeRouter;
