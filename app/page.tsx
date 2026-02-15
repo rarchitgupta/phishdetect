@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -48,6 +49,7 @@ type UrlFormData = z.infer<typeof urlSchema>;
 
 export default function Page() {
   const [isLoading, setIsLoading] = useState(false);
+  const router = useRouter();
   const {
     register,
     handleSubmit,
@@ -63,16 +65,10 @@ export default function Page() {
         : `https://${data.url}`;
     setIsLoading(true);
     try {
-      const response = await fetch("http://localhost:8000/api/analyze", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: fullUrl }),
-      });
-      const result = await response.json();
-      console.log("Analysis result:", result);
+      // Redirect to analysis page with URL as query parameter
+      router.push(`/analysis?url=${encodeURIComponent(fullUrl)}`);
     } catch (error) {
       console.error("Error:", error);
-    } finally {
       setIsLoading(false);
     }
   };
