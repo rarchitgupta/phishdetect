@@ -11,6 +11,9 @@ interface AIAction {
   opinion: string; // Summary of findings on current page state and why it feels like phishing or not
   formIndex?: number; // Which form to fill (if applicable)
   fakeData?: Record<string, string>; // Fake data to fill (if applicable)
+  claim?: string; // Specific claim about what was found
+  threat?: "suspicious" | "safe" | "critical"; // Assessment of this page
+  evidence?: string; // Evidence supporting the claim
 }
 
 interface AIResults {
@@ -18,6 +21,11 @@ interface AIResults {
   actions: AIAction[];
   finalThreatLevel: "safe" | "suspicious" | "critical";
   summary: string;
+  findings: Array<{
+    threat: "suspicious" | "safe" | "critical";
+    reason: string;
+    explanation: string;
+  }>;
 }
 
 export class GeminiAnalyzer {
@@ -130,7 +138,10 @@ export class GeminiAnalyzer {
       "fakeData": {    // Realistic fake data for the chosen form fields
         "email": "test.user@example.com",
         "password": "SecurePass123!"
-      }
+      },
+      "claim": "Specific claim about what you found (e.g., 'Domain name mismatch detected', 'Urgency tactics detected', etc.)",
+      "threat": "suspicious" | "safe" | "critical",  // Your assessment of this page
+      "evidence": "Specific evidence supporting your claim (e.g., 'Domain g00gle.com is attempting to mimic google.com')"
     }
 
     IMPORTANT: 
@@ -186,6 +197,9 @@ export class GeminiAnalyzer {
         opinion: jsonMatch.opinion || "No detailed findings provided",
         formIndex: jsonMatch.formIndex || 0,
         fakeData: jsonMatch.fakeData || {},
+        claim: jsonMatch.claim || "",
+        threat: jsonMatch.threat || "safe",
+        evidence: jsonMatch.evidence || ""
       };
     } catch (error) {
       console.error("Error parsing AI response:", error);
@@ -193,71 +207,105 @@ export class GeminiAnalyzer {
         action: "stop",
         opinion:
           "Error processing AI response. Final page analysis failed to parse, indicating potential malformed response which is suspicious.",
+        claim: "AI response parsing failed",
+        threat: "suspicious",
+        evidence: "Malformed AI response detected"
       };
     }
   }
 
-  generateFinalReport(aiResults: AIAction[], initialUrl: string): AIResults {
-    const lastAction = aiResults[aiResults.length - 1];
+  async generateFinalReport(aiResults: AIAction[], initialUrl: string): Promise<AIResults> {
+    // Collect all AI findings so far
+    const allFindings = aiResults.map(action => ({
+      action: action.action,
+      opinion: action.opinion,
+      claim: action.claim,
+      threat: action.threat,
+      evidence: action.evidence
+    }));
 
-    // Determine threat level based on AI opinions and actions
-    let threatLevel: "safe" | "suspicious" | "critical" = "safe";
+    // Prompt Gemini to analyze all findings and provide final reasoning
+    const analysisPrompt = `You are a security analyst reviewing the complete analysis history of a phishing investigation.
 
-    // Analyze all opinions for phishing indicators
-    const phishingIndicators = [
-      "urgency",
-      "immediate action",
-      "account suspended",
-      "verify now",
-      "suspicious",
-      "phishing",
-      "fake",
-      "scam",
-      "malicious",
-      "unusual",
-      "mismatched",
-      "poor design",
-      "grammar errors",
-      "threatening",
-    ];
+Here are all the findings from each step of the analysis:
+${JSON.stringify(allFindings, null, 2)}
 
-    const legitimateIndicators = [
-      "professional",
-      "legitimate",
-      "secure",
-      "verified",
-      "official",
-      "proper branding",
-      "well-designed",
-      "consistent",
-      "trusted",
-    ];
+Based on ALL these findings combined, provide your final assessment:
 
-    let phishingScore = 0;
-    let legitimateScore = 0;
+1. List specific reasons to suspect this site is malicious (if any)
+2. List specific reasons to believe this site is safe (if any)
+3. Weigh the evidence and make your final determination
 
-    aiResults.forEach((action) => {
-      const opinion = action.opinion.toLowerCase();
-      phishingIndicators.forEach((indicator) => {
-        if (opinion.includes(indicator)) phishingScore++;
-      });
-      legitimateIndicators.forEach((indicator) => {
-        if (opinion.includes(indicator)) legitimateScore++;
-      });
-    });
-
-    // Determine threat level
-    if (phishingScore > legitimateScore && aiResults.length > 3) {
-      threatLevel = "critical";
-    } else if (phishingScore > legitimateScore) {
-      threatLevel = "suspicious";
+Respond with JSON:
+{
+  "finalThreatLevel": "safe" | "suspicious",
+  "reasons": [
+    {
+      "threat": "suspicious" | "safe",
+      "reason": "Brief reason for this assessment",
+      "explanation": "Detailed explanation of why this reason applies"
     }
+  ]
+}`;
 
-    return {
-      url: initialUrl,
-      actions: aiResults,
-      finalThreatLevel: threatLevel,
-      summary: `Analysis completed with ${aiResults.length} actions over ${aiResults.length - 1} iterations. Final assessment: ${threatLevel}. Phishing indicators: ${phishingScore}, Legitimate indicators: ${legitimateScore}.`,
-    };
+    try {
+      const finalAnalysisResult = await this.model.generateContent(analysisPrompt);
+      let responseText = await finalAnalysisResult.response.text();
+      
+      // Clean up the response to extract JSON
+      let jsonStr = responseText;
+      
+      // Remove any markdown code blocks
+      if (responseText.includes('```')) {
+        const jsonMatch = responseText.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+        if (jsonMatch) {
+          jsonStr = jsonMatch[1];
+        }
+      }
+      
+      // Remove any leading/trailing backticks or quotes
+      jsonStr = jsonStr.replace(/^[\s`'"]+|[\s`'"]+$/g, '');
+      
+      const finalAnalysis = JSON.parse(jsonStr);
+
+      // Extract the structured reasons
+      const finalReasons = finalAnalysis.reasons || [];
+
+      return {
+        url: initialUrl,
+        actions: aiResults,
+        finalThreatLevel: finalAnalysis.finalThreatLevel || "safe",
+        summary: `Analysis completed with ${aiResults.length} actions over ${aiResults.length - 1} iterations. Final assessment: ${finalAnalysis.finalThreatLevel || "safe"}.`,
+        findings: finalReasons
+      };
+    } catch (error) {
+      console.error("Error getting final AI analysis:", error);
+      
+      // Fallback to simple analysis if AI fails
+      const threatCounts = aiResults.reduce((acc, action) => {
+        const threat = action.threat || "safe";
+        acc[threat] = (acc[threat] || 0) + 1;
+        return acc;
+      }, {} as Record<string, number>);
+
+      let finalThreatLevel: "safe" | "suspicious" | "critical" = "safe";
+      if (threatCounts.critical > 0) {
+        finalThreatLevel = "critical";
+      } else if (threatCounts.suspicious > threatCounts.safe) {
+        finalThreatLevel = "suspicious";
+      }
+
+      return {
+        url: initialUrl,
+        actions: aiResults,
+        finalThreatLevel,
+        summary: `Analysis completed with ${aiResults.length} actions. Final assessment: ${finalThreatLevel}.`,
+        findings: [{
+          threat: finalThreatLevel,
+          reason: "Analysis completed with error in final reasoning step",
+          explanation: "Failed to get AI analysis of all findings, used simple threat counting instead"
+        }]
+      };
+    }
   }
 }

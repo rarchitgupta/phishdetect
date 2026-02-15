@@ -71,7 +71,7 @@ analyzeRouter.post("/", async (c) => {
 
     return c.json({
       threat_level: aiResults.finalThreatLevel,
-      findings: aiResults.actions.map((a) => a.opinion),
+      findings: aiResults.findings,
       pageState: finalPageState,
       gemini_reasoning: aiResults.summary,
       status: "complete",
