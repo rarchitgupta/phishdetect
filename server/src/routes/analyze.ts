@@ -34,11 +34,6 @@ analyzeRouter.post("/", async (c) => {
 
     const domainInfo = await lookup.getDomainRegistrationInfo(domain);
 
-    console.log("=== DOMAIN INFO ===");
-    console.log(domainInfo);
-    console.log("===================");
-
-
     if (!body.url) {
       return c.json({ error: "URL is required" }, 400);
     }
@@ -74,6 +69,7 @@ analyzeRouter.post("/", async (c) => {
       findings: aiResults.findings,
       pageState: finalPageState,
       gemini_reasoning: aiResults.summary,
+      domain_info: domainInfo,
       status: "complete",
     });
   } catch (error) {
