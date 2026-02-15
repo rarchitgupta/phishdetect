@@ -99,7 +99,105 @@ Return to Frontend
 
 ---
 
-## 🛠️ Tech Stack
+## � The Gemini Agent Loop
+
+### Loop Flow
+
+```
+Loop Iteration N:
+┌─────────────────────────────────────┐
+│ 1. Capture PageState + Screenshot   │
+│    (forms, visible text, network)   │
+└──────────────┬──────────────────────┘
+               ↓
+┌─────────────────────────────────────┐
+│ 2. Send to Gemini with tools list   │
+│    "What should I do next?"          │
+│    Include screenshot + page data    │
+└──────────────┬──────────────────────┘
+               ↓
+┌─────────────────────────────────────┐
+│ 3. Gemini decides action:           │
+│    { action: "fill_form_and_submit" │
+│      form_index: 0,                 │
+│      fields: { name, email, ... } } │
+│    OR { action: "stop_analysis" }   │
+└──────────────┬──────────────────────┘
+               ↓
+┌─────────────────────────────────────┐
+│ 4. Execute in Puppeteer             │
+│    If fill_and_submit:              │
+│      - fillForm(index, fields)      │
+│      - submitForm(index)            │
+│      - Wait for page load           │
+└──────────────┬──────────────────────┘
+               ↓
+┌─────────────────────────────────────┐
+│ 5. Take NEW screenshot + PageState  │
+└──────────────┬──────────────────────┘
+               ↓
+            Loop back to step 2
+```
+
+### Real Example
+
+**Iteration 1 - Initial Page:**
+
+- User submits: `https://fake-login.com`
+- Puppeteer captures: Login form (name, email fields)
+- Screenshot shows: Typical login UI
+- Send to Gemini: "This looks like a harmless login. What should I do?"
+- Gemini responds: `{ action: "fill_form_and_submit", fields: {...} }`
+- Puppeteer fills fake data and submits
+
+**Iteration 2 - Second Page:**
+
+- New page appears: "Verify identity" form with **PASSWORD** field
+- Send to Gemini: "This page has password field!"
+- Gemini responds: `{ action: "stop_analysis", reason: "Credential harvesting detected" }`
+- Loop stops → Report generated:
+  - `threat_level: "critical"`
+  - `findings: ["Multi-step credential harvesting", "Password requested on secondary page"]`
+
+### Gemini Tool Calling
+
+Gemini can only invoke actions from a predefined **tools list**:
+
+```json
+{
+  "tools": [
+    {
+      "name": "fill_form_and_submit",
+      "description": "Fill form with fake data and submit",
+      "parameters": {
+        "form_index": 0,
+        "fields": { "name": "John Doe", "email": "test@example.com" }
+      }
+    },
+    {
+      "name": "click_button",
+      "description": "Click a button to proceed",
+      "parameters": { "button_text": "Continue" }
+    },
+    {
+      "name": "stop_analysis",
+      "description": "Stop and report findings",
+      "parameters": { "reason": "Detected credential harvesting" }
+    }
+  ]
+}
+```
+
+### Loop Termination Conditions
+
+1. ✋ Gemini calls `stop_analysis()` (detects danger)
+2. 🔄 Max iterations reached (e.g., 5 iterations)
+3. ⏱️ Timeout (>30 seconds)
+4. ❌ Error (page crash, network failure)
+
+---
+
+## �🛠️ Tech Stack
 
 - **Frontend:** Next.js 16 + React 19 (existing)
 - **Backend:** Hono + Bun (lightweight, fast)

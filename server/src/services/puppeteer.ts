@@ -122,56 +122,70 @@ export class PuppeteerController {
       : "harmless";
   }
 
-  async analyzePage(url: string): Promise<PageState> {
+  async analyzePage(url: string, page?: Page): Promise<PageState> {
     if (!this.browser) {
       throw new Error("Browser not initialized. Call initialize() first.");
     }
 
-    this.networkRequests = [];
-    this.mainDomain = new URL(url).hostname;
-
-    const page = await this.browser.newPage();
+    // If no page provided, create a new one (for backward compatibility)
+    const isOwnedPage = !page;
+    const currentPage = page || (await this.browser.newPage());
 
     try {
-      // Set up network monitoring
-      await page.on("request", (request) => {
-        const requestUrl = request.url();
-        const domain = new URL(requestUrl).hostname;
-        const isSuspicious = this.isSuspiciousDomain(domain);
+      if (isOwnedPage) {
+        this.networkRequests = [];
+        this.mainDomain = new URL(url).hostname;
 
-        this.networkRequests.push({
-          url: requestUrl,
-          method: request.method(),
-          resourceType: request.resourceType(),
-          headers: request.headers(),
-          domain,
-          isSuspicious,
+        // Set up network monitoring
+        await currentPage.on("request", (request) => {
+          const requestUrl = request.url();
+          const domain = new URL(requestUrl).hostname;
+          const isSuspicious = this.isSuspiciousDomain(domain);
+
+          this.networkRequests.push({
+            url: requestUrl,
+            method: request.method(),
+            resourceType: request.resourceType(),
+            headers: request.headers(),
+            domain,
+            isSuspicious,
+          });
         });
-      });
 
-      // Set viewport
-      await page.setViewport({ width: 1920, height: 1080 });
+        // Set viewport
+        await currentPage.setViewport({ width: 1920, height: 1080 });
 
-      // Navigate to URL with timeout
-      await page.goto(url, { waitUntil: "networkidle2", timeout: 30000 });
+        // Navigate to URL with timeout
+        await currentPage.goto(url, {
+          waitUntil: "networkidle2",
+          timeout: 30000,
+        });
+      }
 
       // Extract page state
-      const pageState = await this.extractPageState(page, url);
+      const pageState = await this.extractPageState(currentPage, url);
 
-      // Add trimmed network requests to page state
-      pageState.networkRequests = this.networkRequests.map((req) => ({
-        url: req.url,
-        domain: req.domain,
-        isSuspicious: req.isSuspicious,
-      })) as CleanNetworkRequest[];
+      // Add trimmed network requests to page state (only if owned page)
+      if (isOwnedPage) {
+        pageState.networkRequests = this.networkRequests.map((req) => ({
+          url: req.url,
+          domain: req.domain,
+          isSuspicious: req.isSuspicious,
+        })) as CleanNetworkRequest[];
+      } else {
+        pageState.networkRequests = [];
+      }
 
       // Take screenshot
-      const screenshot = await page.screenshot({ encoding: "base64" });
+      const screenshot = await currentPage.screenshot({ encoding: "base64" });
       pageState.screenshot = screenshot as string;
 
       return pageState;
     } finally {
-      await page.close();
+      // Only close if we created the page
+      if (isOwnedPage) {
+        await currentPage.close();
+      }
     }
   }
 
@@ -304,13 +318,74 @@ export class PuppeteerController {
         const form = document.querySelectorAll("form")[index];
         if (!form) throw new Error(`Form ${index} not found`);
 
-        Object.entries(data).forEach(([name, value]) => {
-          const input = form.querySelector(
-            `input[name="${name}"], textarea[name="${name}"]`,
+        // Get all visible input/textarea fields in the form
+        const allInputs = Array.from(
+          form.querySelectorAll("input, textarea"),
+        ) as HTMLInputElement[];
+
+        const visibleInputs = allInputs.filter((input) => {
+          const style = window.getComputedStyle(input);
+          return (
+            style.display !== "none" &&
+            style.visibility !== "hidden" &&
+            input.type !== "hidden" &&
+            input.type !== "submit"
+          );
+        });
+
+        Object.entries(data).forEach(([key, value]) => {
+          // Try multiple strategies to find the input:
+          // 1. By name attribute
+          let input = form.querySelector(
+            `input[name="${key}"], textarea[name="${key}"]`,
           ) as HTMLInputElement;
+
+          // 2. By id attribute
+          if (!input) {
+            input = form.querySelector(
+              `input[id="${key}"], textarea[id="${key}"]`,
+            ) as HTMLInputElement;
+          }
+
+          // 3. By type attribute (e.g., key = "text", "email", "password")
+          if (!input) {
+            input = form.querySelector(
+              `input[type="${key}"]`,
+            ) as HTMLInputElement;
+          }
+
+          // 4. By placeholder containing the key
+          if (!input) {
+            input =
+              allInputs.find((el) =>
+                el.placeholder?.toLowerCase().includes(key.toLowerCase()),
+              ) || (null as any);
+          }
+
+          // 5. Fallback: assign to first visible unfilled input
+          if (!input && visibleInputs.length > 0) {
+            input = visibleInputs.find((el) => !el.value) || visibleInputs[0];
+          }
+
           if (input) {
-            input.value = value;
+            // Use native input setter to trigger React's synthetic events
+            const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
+              window.HTMLInputElement.prototype,
+              "value",
+            )?.set;
+            if (nativeInputValueSetter) {
+              nativeInputValueSetter.call(input, value);
+            } else {
+              input.value = value;
+            }
+
+            // Dispatch events that React and other frameworks listen for
+            input.dispatchEvent(new Event("input", { bubbles: true }));
             input.dispatchEvent(new Event("change", { bubbles: true }));
+            input.dispatchEvent(
+              new KeyboardEvent("keydown", { bubbles: true }),
+            );
+            input.dispatchEvent(new KeyboardEvent("keyup", { bubbles: true }));
           }
         });
       },
@@ -320,17 +395,57 @@ export class PuppeteerController {
   }
 
   async submitForm(page: Page, formIndex: number): Promise<void> {
-    await page.evaluate((index) => {
+    // Try clicking the submit button instead of calling form.submit()
+    // This ensures SPA event handlers (React onSubmit, etc.) are triggered
+    const clicked = await page.evaluate((index) => {
       const form = document.querySelectorAll("form")[index];
       if (!form) throw new Error(`Form ${index} not found`);
+
+      // Look for submit button inside the form
+      let submitBtn =
+        form.querySelector('button[type="submit"]') ||
+        form.querySelector('input[type="submit"]') ||
+        form.querySelector("button");
+
+      // If no button in form, look for a nearby button (SPAs often have buttons outside forms)
+      if (!submitBtn) {
+        submitBtn = document.querySelector(
+          'button[type="submit"], input[type="submit"]',
+        );
+      }
+
+      // Also try buttons with common submit text
+      if (!submitBtn) {
+        const allButtons = Array.from(document.querySelectorAll("button"));
+        submitBtn =
+          allButtons.find((btn) => {
+            const text = btn.textContent?.toLowerCase() || "";
+            return (
+              text.includes("continue") ||
+              text.includes("submit") ||
+              text.includes("sign in") ||
+              text.includes("log in") ||
+              text.includes("next")
+            );
+          }) || null;
+      }
+
+      if (submitBtn) {
+        (submitBtn as HTMLElement).click();
+        return true;
+      }
+
+      // Last resort: native form submit
       form.submit();
+      return false;
     }, formIndex);
 
-    // Wait for navigation
-    await page
-      .waitForNavigation({ waitUntil: "networkidle2", timeout: 10000 })
-      .catch(() => {
-        // Timeout is ok, page might not navigate
-      });
+    // Wait for either navigation or DOM changes
+    await Promise.race([
+      page
+        .waitForNavigation({ waitUntil: "networkidle2", timeout: 5000 })
+        .catch(() => {}),
+      new Promise((resolve) => setTimeout(resolve, 3000)),
+    ]);
   }
 }
