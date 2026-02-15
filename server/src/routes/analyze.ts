@@ -2,6 +2,7 @@
 import { Hono } from "hono";
 import { PuppeteerController, PageState } from "../services/puppeteer";
 import { GeminiAnalyzer, AIResults } from "../services/gemini";
+import { LookupService } from "../services/lookup";
 
 const analyzeRouter = new Hono();
 
@@ -20,9 +21,23 @@ interface AnalyzeResponse {
 analyzeRouter.post("/", async (c) => {
   const puppeteer = new PuppeteerController();
   const gemini = new GeminiAnalyzer(process.env.GEMINI_API_KEY!);
+  const lookup = new LookupService();
 
   try {
     const body = (await c.req.json()) as AnalyzeRequest;
+
+    if (!body.url) {
+      return c.json({ error: "URL is required" }, 400);
+    }
+
+    const domain = new URL(body.url).hostname;
+
+    const domainInfo = await lookup.getDomainRegistrationInfo(domain);
+
+    console.log("=== DOMAIN INFO ===");
+    console.log(domainInfo);
+    console.log("===================");
+
 
     if (!body.url) {
       return c.json({ error: "URL is required" }, 400);
