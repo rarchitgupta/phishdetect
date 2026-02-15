@@ -155,6 +155,9 @@ export class PuppeteerController {
       // Navigate to URL with timeout
       await page.goto(url, { waitUntil: "networkidle2", timeout: 30000 });
 
+      // Add 2.5 second delay before checking for forms
+      await new Promise(resolve => setTimeout(resolve, 2500));
+
       // Extract page state
       const pageState = await this.extractPageState(page, url);
 
@@ -190,7 +193,36 @@ export class PuppeteerController {
     return false;
   }
 
-  private async extractPageState(page: Page, url: string): Promise<PageState> {
+  async extractPageState(page: Page, url: string): Promise<PageState> {
+    // Debug: Log all input elements and potential form containers
+    const debugInfo = await page.evaluate(() => {
+      const inputs = Array.from(document.querySelectorAll('input, button, [role="button"]')).map(el => ({
+        tagName: el.tagName,
+        type: (el as HTMLInputElement).type || 'N/A',
+        name: (el as HTMLInputElement).name || 'N/A',
+        id: el.id || 'N/A',
+        placeholder: (el as HTMLInputElement).placeholder || 'N/A',
+        textContent: el.textContent?.substring(0, 50) || 'N/A',
+        className: el.className || 'N/A'
+      }));
+      
+      const forms = Array.from(document.querySelectorAll('form')).map(form => ({
+        id: form.id,
+        action: form.action,
+        method: form.method,
+        innerHTML: form.innerHTML.substring(0, 200)
+      }));
+
+      return { inputs, forms };
+    });
+
+    console.log(`=== DEBUG INFO for ${url} ===`);
+    console.log('Input elements found:', debugInfo.inputs.length);
+    console.log('Forms found:', debugInfo.forms.length);
+    console.log('Input elements:', JSON.stringify(debugInfo.inputs, null, 2));
+    console.log('Forms:', JSON.stringify(debugInfo.forms, null, 2));
+    console.log(`=== END DEBUG INFO ===`);
+
     const pageData = await page.evaluate(() => {
       const forms: Form[] = [];
 
@@ -299,18 +331,67 @@ export class PuppeteerController {
     formIndex: number,
     fakeData: Record<string, string>,
   ): Promise<void> {
+    // Debug: Check how many forms exist
+    const formCount = await page.evaluate(() => {
+      return document.querySelectorAll("form").length;
+    });
+    console.log(`DEBUG: Found ${formCount} forms on page, trying to fill form ${formIndex}`);
+
     await page.evaluate(
       (index, data) => {
         const form = document.querySelectorAll("form")[index];
         if (!form) throw new Error(`Form ${index} not found`);
 
+        console.log(`DEBUG: Form found, filling with data:`, data);
+        console.log(`DEBUG: Form inputs:`, Array.from(form.querySelectorAll('input, textarea')).map(input => ({
+          tagName: input.tagName,
+          type: (input as HTMLInputElement).type,
+          name: (input as HTMLInputElement).name,
+          id: (input as HTMLInputElement).id,
+          placeholder: (input as HTMLInputElement).placeholder
+        })));
+
         Object.entries(data).forEach(([name, value]) => {
-          const input = form.querySelector(
+          // Try to find input by name first
+          let input = form.querySelector(
             `input[name="${name}"], textarea[name="${name}"]`,
           ) as HTMLInputElement;
+          
+          // If not found by name, try by placeholder
+          if (!input) {
+            input = form.querySelector(
+              `input[placeholder*="${name}"], textarea[placeholder*="${name}"]`,
+            ) as HTMLInputElement;
+          }
+          
+          // If still not found, try by type (email, password, etc.)
+          if (!input) {
+            input = form.querySelector(
+              `input[type="${name}"], textarea[type="${name}"]`,
+            ) as HTMLInputElement;
+          }
+          
+          // If still not found, try the first input of matching type
+          if (!input && (name === 'email' || name === 'password')) {
+            input = form.querySelector(
+              `input[type="${name}"]`,
+            ) as HTMLInputElement;
+          }
+          
+          // If still not found, try the first text input for email
+          if (!input && name === 'email') {
+            input = form.querySelector(
+              'input[type="text"]',
+            ) as HTMLInputElement;
+          }
+
           if (input) {
+            console.log(`DEBUG: Filling input:`, input.tagName, input.type, input.name, input.placeholder);
             input.value = value;
             input.dispatchEvent(new Event("change", { bubbles: true }));
+            input.dispatchEvent(new Event("input", { bubbles: true }));
+          } else {
+            console.log(`DEBUG: Could not find input for field: ${name}`);
           }
         });
       },

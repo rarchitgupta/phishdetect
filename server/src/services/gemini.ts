@@ -27,7 +27,7 @@ export class GeminiAnalyzer {
 
   private initializeModel() {
     this.model = this.genAI.getGenerativeModel({
-      model: "gemini-1.5-flash",
+      model: "gemini-2.5-flash",
       safetySettings: [
         {
           category: HarmCategory.HARM_CATEGORY_HARASSMENT,
@@ -71,6 +71,11 @@ export class GeminiAnalyzer {
     currentUrl: string,
     iterationCount: number
   ): string {
+    // Log HTML content for debugging
+    console.log(`=== HTML Content for ${currentUrl} ===`);
+    console.log(pageState.visibleText.substring(0, 1000));
+    console.log(`=== End HTML Content ===`);
+
     return `
     You are a phishing detection AI. Analyze this webpage and provide detailed findings before deciding on action.
 
@@ -117,6 +122,7 @@ export class GeminiAnalyzer {
     - Always provide detailed findings in your opinion, even when stopping
     - Choose the most compelling form that seems phishy or leads to phishing
     - Provide realistic fake data matching the form fields
+    - Do not stop analysis until you see a form asking for sensitive information.
     `;
   }
 
@@ -180,9 +186,9 @@ export class GeminiAnalyzer {
     
     // Determine threat level
     if (phishingScore > legitimateScore && aiResults.length > 3) {
-      threatLevel = "critical";
-    } else if (phishingScore > legitimateScore) {
       threatLevel = "suspicious";
+    } else if (phishingScore > legitimateScore) {
+      threatLevel = "secure";
     }
 
     return {
